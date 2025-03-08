@@ -113,6 +113,7 @@ static vnode_ops_t s5fs_file_vops = {.read = s5fs_read,
                                      .flush_pframe = s5fs_flush_pframe,
                                      .truncate_file = s5fs_truncate_file};
 
+
 static mobj_ops_t s5fs_mobj_ops = {.get_pframe = NULL,
                                    .fill_pframe = blockdev_fill_pframe,
                                    .flush_pframe = blockdev_flush_pframe,
@@ -223,6 +224,7 @@ static void s5fs_sync(fs_t *fs)
     s5fs_t *s5fs = FS_TO_S5FS(fs);
     mobj_t *mobj = &s5fs->s5f_mobj;
 
+    
     pframe_t *pf;
     s5_get_meta_disk_block(s5fs, S5_SUPER_BLOCK, 1, &pf);
     memcpy(pf->pf_addr, &s5fs->s5f_super, sizeof(s5_super_t));
@@ -281,7 +283,7 @@ static void s5fs_delete_vnode(fs_t *fs, vnode_t *vn)
 static ssize_t s5fs_read(vnode_t *vnode, size_t pos, void *buf, size_t len)
 {
     KASSERT(!S_ISDIR(vnode->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_read");
     return -1;
 }
 
@@ -290,7 +292,7 @@ static ssize_t s5fs_write(vnode_t *vnode, size_t pos, const void *buf,
                           size_t len)
 {
     KASSERT(!S_ISDIR(vnode->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_write");
     return -1;
 }
 
@@ -330,7 +332,7 @@ static long s5fs_mknod(struct vnode *dir, const char *name, size_t namelen,
                        int mode, devid_t devid, struct vnode **out)
 {
     KASSERT(S_ISDIR(dir->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_mknod");
     return -1;
 }
 
@@ -365,7 +367,7 @@ static long s5fs_link(vnode_t *dir, const char *name, size_t namelen,
                       vnode_t *child)
 {
     KASSERT(S_ISDIR(dir->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_link");
     return -1;
 }
 
@@ -385,7 +387,7 @@ static long s5fs_unlink(vnode_t *dir, const char *name, size_t namelen)
     KASSERT(S_ISDIR(dir->vn_mode) && "should be handled at the VFS level");
     KASSERT(!name_match(".", name, namelen));
     KASSERT(!name_match("..", name, namelen));
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_unlink");
     return -1;
 }
 
@@ -469,7 +471,7 @@ static long s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen,
                        struct vnode **out)
 {
     KASSERT(S_ISDIR((dir)->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_mkdir");
     return -1;
 }
 
@@ -491,7 +493,7 @@ static long s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
     KASSERT(!name_match(".", name, namelen));
     KASSERT(!name_match("..", name, namelen));
     KASSERT(S_ISDIR(parent->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_rmdir");
     return -1;
 }
 
@@ -514,7 +516,7 @@ static long s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen)
 static long s5fs_readdir(vnode_t *vnode, size_t pos, struct dirent *d)
 {
     KASSERT(S_ISDIR(vnode->vn_mode) && "should be handled at the VFS level");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5fs_readdir");
     return -1;
 }
 
@@ -555,16 +557,16 @@ static void s5fs_truncate_file(vnode_t *file)
 {
     KASSERT(S_ISREG(file->vn_mode) && "This routine should only be called for regular files");
     file->vn_len = 0;
-    s5_node_t *s5_node = VNODE_TO_S5NODE(file);
-    s5_inode_t *s5_inode = &s5_node->inode;
-    // setting the size of the inode to be 0 as well
-    s5_inode->s5_un.s5_size = 0;
-    s5_node->dirtied_inode = 1;
-
-    // Call subroutine to free the blocks that were used
-    vlock(file);
-    s5_remove_blocks(s5_node);
-    vunlock(file);
+    s5_node_t* s5_node = VNODE_TO_S5NODE(file); 
+    s5_inode_t* s5_inode = &s5_node->inode; 
+    // setting the size of the inode to be 0 as well 
+    s5_inode->s5_un.s5_size = 0; 
+    s5_node->dirtied_inode = 1; 
+    
+    // Call subroutine to free the blocks that were used 
+    vlock(file); 
+    s5_remove_blocks(s5_node);  
+    vunlock(file); 
 }
 
 /*
@@ -573,7 +575,7 @@ static void s5fs_truncate_file(vnode_t *file)
  * Used for meta blocks (i.e. indirect blocks, inode storage, and super block), thus location is passed in.
  */
 inline void s5_get_meta_disk_block(s5fs_t *s5fs, uint64_t blocknum, long forwrite,
-                                   pframe_t **pfp)
+                              pframe_t **pfp)
 {
     mobj_lock(&s5fs->s5f_mobj);
     mobj_find_pframe(&s5fs->s5f_mobj, blocknum, pfp);
@@ -591,8 +593,8 @@ inline void s5_get_meta_disk_block(s5fs_t *s5fs, uint64_t blocknum, long forwrit
 
     blockdev_t *bd = s5fs->s5f_bdev;
     long ret = bd->bd_ops->read_block(bd, pf->pf_addr, (blocknum_t)pf->pf_loc, 1);
-    pf->pf_dirty |= forwrite; // yes, needed
-    KASSERT(!ret);
+    pf->pf_dirty |= forwrite;  // yes, needed
+    KASSERT (!ret);
     mobj_unlock(&s5fs->s5f_mobj);
     KASSERT(!ret && *pfp);
 }
@@ -603,7 +605,7 @@ inline void s5_get_meta_disk_block(s5fs_t *s5fs, uint64_t blocknum, long forwrit
  * Used for file blocks, thus file block number is supplied.
  */
 static inline void s5_get_file_disk_block(vnode_t *vnode, uint64_t blocknum, uint64_t loc, long forwrite,
-                                          pframe_t **pfp)
+                              pframe_t **pfp)
 {
     mobj_create_pframe(&vnode->vn_mobj, blocknum, loc, pfp);
     pframe_t *pf = *pfp;
@@ -612,7 +614,7 @@ static inline void s5_get_file_disk_block(vnode_t *vnode, uint64_t blocknum, uin
     blockdev_t *bd = VNODE_TO_S5FS(vnode)->s5f_bdev;
     long ret = bd->bd_ops->read_block(bd, pf->pf_addr, (blocknum_t)pf->pf_loc, 1);
     pf->pf_dirty |= forwrite;
-    KASSERT(!ret);
+    KASSERT (!ret);
 }
 
 /* Wrapper around pframe_release.
@@ -667,16 +669,12 @@ static long s5fs_get_pframe(vnode_t *vnode, uint64_t pagenum, long forwrite,
     long loc = s5_file_block_to_disk_block(VNODE_TO_S5NODE(vnode), pagenum, forwrite, &new);
     if (loc < 0)
         return loc;
-    if (loc)
-    {
-        // block is mapped
-        if (new)
-        {
+    if (loc) {
+        // block is mapped 
+        if (new) {
             // block didn't previously exist, thus its current contents are meaningless
             *pfp = s5_cache_and_clear_block(&vnode->vn_mobj, pagenum, loc);
-        }
-        else
-        {
+        } else {
             // block must be read from disk
             s5_get_file_disk_block(vnode, pagenum, loc, forwrite, pfp);
         }
@@ -701,8 +699,7 @@ static long s5fs_fill_pframe(vnode_t *vnode, pframe_t *pf)
     return 0;
 }
 
-static long s5fs_flush_pframe(vnode_t *vnode, pframe_t *pf)
-{
+static long s5fs_flush_pframe(vnode_t *vnode, pframe_t *pf) {
     return blockdev_flush_pframe(&VNODE_TO_S5FS(vnode)->s5f_mobj, pf);
 }
 

@@ -146,14 +146,13 @@ long s5_file_block_to_disk_block(s5_node_t *sn, size_t file_blocknum,
  * Return a page frame on success, or:
  *  - 0: The memory for the page frame was not allocated successfully
  */
-pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc)
-{
+pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc) {
     pframe_t *pf;
     mobj_create_pframe(mo, block, loc, &pf);
     pf->pf_addr = page_alloc();
     KASSERT(pf->pf_addr);
     memset(pf->pf_addr, 0, PAGE_SIZE);
-    pf->pf_dirty = 1; // XXX do this later --I think it's okay here -mgyee
+    pf->pf_dirty = 1;  // XXX do this later --I think it's okay here -mgyee
     return pf;
 }
 
@@ -167,7 +166,9 @@ pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc)
  * Return the number of bytes read, or:
  *  - Propagate errors from s5_get_file_block (do not return a partial
  *    read). As in, if s5_get_file_block returns an error, 
- *    the call to s5_read_file should fail.
+ *    the call to s5_read_file should fail. Thus, only return the number of bytes
+ *    that were actually read if the function doesn't fail. For example, 
+ *    if 10k bytes were requested, but you only read 5k, only return 5k
  *
  * Hints:
  *  - Do not directly call s5_file_block_to_disk_block. To obtain pframes with
@@ -193,7 +194,9 @@ ssize_t s5_read_file(s5_node_t *sn, size_t pos, char *buf, size_t len)
  * Return the number of bytes written, or:
  *  - EFBIG: pos was beyond S5_MAX_FILE_SIZE
  *  - Propagate errors from s5_get_file_block (that is, do not return a partial
- *    write)
+ *    write) Thus, only return the number of bytes that were actually written if 
+ *    the function doesn't fail. For example, if 10k bytes were requested, 
+ *    but you only wrote 5k, only return 5k
  *
  * Hints:
  *  - You should return -EFBIG only if the provided pos was invalid. Otherwise,
@@ -445,7 +448,7 @@ long s5_find_dirent(s5_node_t *sn, const char *name, size_t namelen,
 {
     KASSERT(S_ISDIR(sn->vnode.vn_mode) && "should be handled at the VFS level");
     KASSERT(S5_BLOCK_SIZE == PAGE_SIZE && "be wary, thee");
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5_find_dirent");
     return -1;
 }
 
@@ -507,7 +510,7 @@ void s5_replace_dirent(s5_node_t *sn, const char *name, size_t namelen,
 {
     vnode_t *dir = &sn->vnode;
     s5_inode_t *inode = &sn->inode;
-    NOT_YET_IMPLEMENTED("S5FS: s5_replace_dirent");
+    NOT_YET_IMPLEMENTED("RENAMEDIR: s5_replace_dirent");
 }
 
 /* Create a directory entry.
@@ -531,7 +534,7 @@ long s5_link(s5_node_t *dir, const char *name, size_t namelen,
 {
     KASSERT(kmutex_owns_mutex(&dir->vnode.vn_mobj.mo_mutex));
 
-    NOT_YET_IMPLEMENTED("S5FS: KASSERT");
+    NOT_YET_IMPLEMENTED("S5FS: s5_link");
     return -1;
 }
 
@@ -561,10 +564,10 @@ void s5_remove_blocks(s5_node_t *sn)
 {
     // Free the blocks used by the node
     // First, free the the direct blocks
-    s5fs_t *s5fs = VNODE_TO_S5FS(&sn->vnode);
-    s5_inode_t *s5_inode = &sn->inode;
+    s5fs_t* s5fs = VNODE_TO_S5FS(&sn->vnode);
+    s5_inode_t* s5_inode = &sn->inode; 
     mobj_t *o = &sn->vnode.vn_mobj;
-    for (unsigned i = 0; i < S5_NDIRECT_BLOCKS; i++)
+    for (unsigned i = 0; i < S5_NDIRECT_BLOCKS; i++) 
     {
         if (s5_inode->s5_direct_blocks[i])
         {
