@@ -146,13 +146,14 @@ long s5_file_block_to_disk_block(s5_node_t *sn, size_t file_blocknum,
  * Return a page frame on success, or:
  *  - 0: The memory for the page frame was not allocated successfully
  */
-pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc) {
+pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc)
+{
     pframe_t *pf;
     mobj_create_pframe(mo, block, loc, &pf);
     pf->pf_addr = page_alloc();
     KASSERT(pf->pf_addr);
     memset(pf->pf_addr, 0, PAGE_SIZE);
-    pf->pf_dirty = 1;  // XXX do this later --I think it's okay here -mgyee
+    pf->pf_dirty = 1; // XXX do this later --I think it's okay here -mgyee
     return pf;
 }
 
@@ -564,10 +565,10 @@ void s5_remove_blocks(s5_node_t *sn)
 {
     // Free the blocks used by the node
     // First, free the the direct blocks
-    s5fs_t* s5fs = VNODE_TO_S5FS(&sn->vnode);
-    s5_inode_t* s5_inode = &sn->inode; 
+    s5fs_t *s5fs = VNODE_TO_S5FS(&sn->vnode);
+    s5_inode_t *s5_inode = &sn->inode;
     mobj_t *o = &sn->vnode.vn_mobj;
-    for (unsigned i = 0; i < S5_NDIRECT_BLOCKS; i++) 
+    for (unsigned i = 0; i < S5_NDIRECT_BLOCKS; i++)
     {
         if (s5_inode->s5_direct_blocks[i])
         {
