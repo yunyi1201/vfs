@@ -322,8 +322,48 @@ long do_rmdir(const char *path) {
  *  - Lock/unlock the parent directory when calling its unlink operation.
  */
 long do_unlink(const char *path) {
-  NOT_YET_IMPLEMENTED("VFS: do_unlink");
-  return -1;
+  struct vnode *dir_vnode, *vnode;
+  const char *basename = NULL;
+  size_t namelen = 0;
+  long ret = namev_dir(curproc->p_cwd, path, &dir_vnode, &basename, &namelen);
+  if (ret < 0) {
+    return ret;
+  }
+
+  if (namelen > NAME_LEN) {
+    vput(&dir_vnode);
+    return -ENAMETOOLONG;
+  }
+
+  if (!S_ISDIR(dir_vnode->vn_mode)) {
+    vput(&dir_vnode);
+    return -ENOTDIR;
+  }
+
+  vlock(dir_vnode);
+  ret = namev_lookup(dir_vnode, basename, namelen, &vnode);
+  if (ret < 0) {
+    vunlock(dir_vnode);
+    vput(&dir_vnode);
+    return ret;
+  }
+
+  if (S_ISDIR(vnode->vn_mode)) {
+    vunlock(dir_vnode);
+    vput(&vnode);
+    vput(&dir_vnode);
+    return -EPERM;
+  }
+
+  KASSERT(dir_vnode->vn_ops->unlink);
+  ret = dir_vnode->vn_ops->unlink(dir_vnode, basename, namelen);
+  vunlock(dir_vnode);
+
+  // if the vnode hold the last reference of the inode, `vput` will call
+  // `fs->delete_vnode` to free inode.
+  vput(&vnode);
+  vput(&dir_vnode);
+  return ret;
 }
 
 /*
@@ -344,8 +384,48 @@ long do_unlink(const char *path) {
  *    namev_dir().
  */
 long do_link(const char *oldpath, const char *newpath) {
-  NOT_YET_IMPLEMENTED("VFS: do_link");
-  return -1;
+  struct vnode *vnode, *dir_vnode, *parent_vnode;
+
+  const char *basename = NULL;
+  size_t namelen = 0;
+
+  long ret = namev_resolve(curproc->p_cwd, oldpath, &vnode);
+  if (ret < 0) {
+    return ret;
+  }
+
+  // don't support link directory.
+  if (S_ISDIR(vnode->vn_mode)) {
+    vput(&vnode);
+    return -EPERM;
+  }
+
+  ret = namev_dir(curproc->p_cwd, newpath, &dir_vnode, &basename, &namelen);
+
+  if (ret < 0) {
+    vput(&vnode);
+    return ret;
+  }
+
+  if (!S_ISDIR(dir_vnode->vn_mode)) {
+    vput(&dir_vnode);
+    vput(&vnode);
+    return -ENOTDIR;
+  }
+
+  if (namelen > NAME_LEN) {
+    vput(&vnode);
+    vput(&dir_vnode);
+    return -ENAMETOOLONG;
+  }
+
+  vlock_in_order(dir_vnode, vnode);
+  ret = dir_vnode->vn_ops->link(dir_vnode, basename, namelen, vnode);
+  vunlock_in_order(dir_vnode, vnode);
+
+  vput(&dir_vnode);
+  vput(&vnode);
+  return ret;
 }
 
 /* Rename a file or directory.
@@ -434,8 +514,24 @@ long do_chdir(const char *path) {
  *    sizeof(dirent_t).
  */
 ssize_t do_getdent(int fd, struct dirent *dirp) {
-  NOT_YET_IMPLEMENTED("VFS: do_getdent");
-  return -1;
+  struct file *file = fget(fd);
+  if (!file) {
+    return -EBADF;
+  }
+
+  struct vnode *vnode = file->f_vnode;
+  if (!S_ISDIR(vnode->vn_mode)) {
+    fput(&file);
+    return -ENOTDIR;
+  }
+
+  vlock(vnode);
+  KASSERT(vnode->vn_ops->readdir);
+  ssize_t ret = vnode->vn_ops->readdir(vnode, file->f_pos, dirp);
+  vunlock(vnode);
+  file->f_pos += ret;
+  fput(&file);
+  return ret == 0 ? 0 : sizeof(struct dirent);
 }
 
 /*
@@ -452,8 +548,36 @@ ssize_t do_getdent(int fd, struct dirent *dirp) {
  *  - Be sure to protect the vnode if you have to access its vn_len.
  */
 off_t do_lseek(int fd, off_t offset, int whence) {
-  NOT_YET_IMPLEMENTED("VFS: do_lseek");
-  return -1;
+  struct file *file = fget(fd);
+  if (!file) {
+    return -EBADF;
+  }
+  off_t new_pos;
+  switch (whence) {
+  case SEEK_SET:
+    new_pos = offset;
+    break;
+  case SEEK_CUR:
+    new_pos = file->f_pos + offset;
+    break;
+  case SEEK_END:
+    vlock(file->f_vnode);
+    new_pos = file->f_vnode->vn_len + offset;
+    vunlock(file->f_vnode);
+    break;
+  default:
+    fput(&file);
+    return -EINVAL;
+  }
+
+  if (new_pos < 0) {
+    fput(&file);
+    return -EINVAL;
+  }
+
+  file->f_pos = new_pos;
+  fput(&file);
+  return new_pos;
 }
 
 /* Use buf to return the status of the file represented by path.
@@ -462,8 +586,22 @@ off_t do_lseek(int fd, off_t offset, int whence) {
  *  - Propagate errors from namev_resolve() and the vnode operation stat.
  */
 long do_stat(const char *path, stat_t *buf) {
-  NOT_YET_IMPLEMENTED("VFS: do_stat");
-  return -1;
+  struct vnode *vnode = NULL;
+  KASSERT(curproc && curproc->p_cwd);
+  long ret = namev_resolve(curproc->p_cwd, path, &vnode);
+  if (ret < 0) {
+    if (vnode) {
+      vput(&vnode);
+    }
+    return ret;
+  }
+
+  KASSERT(vnode && vnode->vn_ops->stat);
+  vlock(vnode);
+  ret = vnode->vn_ops->stat(vnode, buf);
+  vunlock(vnode);
+  vput(&vnode);
+  return ret;
 }
 
 #ifdef __MOUNTING__

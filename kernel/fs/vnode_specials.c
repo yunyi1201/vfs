@@ -64,26 +64,21 @@ static vnode_ops_t blockdev_spec_vops = {
     .flush_pframe = blockdev_file_flush_pframe,
 };
 
-void init_special_vnode(vnode_t *vn)
-{
-    if (S_ISCHR(vn->vn_mode))
-    {
-        vn->vn_ops = &chardev_spec_vops;
-        vn->vn_dev.chardev = chardev_lookup(vn->vn_devid);
-    }
-    else
-    {
-        KASSERT(S_ISBLK(vn->vn_mode));
-        vn->vn_ops = &blockdev_spec_vops;
-        vn->vn_dev.blockdev = blockdev_lookup(vn->vn_devid);
-    }
+void init_special_vnode(vnode_t *vn) {
+  if (S_ISCHR(vn->vn_mode)) {
+    vn->vn_ops = &chardev_spec_vops;
+    vn->vn_dev.chardev = chardev_lookup(vn->vn_devid);
+  } else {
+    KASSERT(S_ISBLK(vn->vn_mode));
+    vn->vn_ops = &blockdev_spec_vops;
+    vn->vn_dev.blockdev = blockdev_lookup(vn->vn_devid);
+  }
 }
 
-static long special_file_stat(vnode_t *file, stat_t *ss)
-{
-    KASSERT(file->vn_fs->fs_root->vn_ops->stat != NULL);
-    // call the containing file system's stat routine
-    return file->vn_fs->fs_root->vn_ops->stat(file, ss);
+static long special_file_stat(vnode_t *file, stat_t *ss) {
+  KASSERT(file->vn_fs->fs_root->vn_ops->stat != NULL);
+  // call the containing file system's stat routine
+  return file->vn_fs->fs_root->vn_ops->stat(file, ss);
 }
 
 /*
@@ -108,13 +103,13 @@ static long special_file_stat(vnode_t *file, stat_t *ss)
  *
  */
 static ssize_t chardev_file_read(vnode_t *file, size_t pos, void *buf,
-                                 size_t count)
-{
-    vunlock(file);
-    vlock(file);
-    chardev_t *dev = file->vn_dev.chardev;
-    KASSERT(dev);
-    return dev->cd_ops->read(dev, pos, buf, count);
+                                 size_t count) {
+  vunlock(file);
+  chardev_t *dev = file->vn_dev.chardev;
+  KASSERT(dev);
+  int ret = dev->cd_ops->read(dev, pos, buf, count);
+  vlock(file);
+  return ret;
 }
 
 /*
@@ -126,57 +121,50 @@ static ssize_t chardev_file_read(vnode_t *file, size_t pos, void *buf,
  *
  */
 static long chardev_file_write(vnode_t *file, size_t pos, const void *buf,
-                               size_t count)
-{
-    vunlock(file);
-    vlock(file);
-    chardev_t *dev  = file->vn_dev.chardev;
-    KASSERT(dev);
-    return dev->cd_ops->write(dev, pos, buf, count);
+                               size_t count) {
+  vunlock(file);
+  chardev_t *dev = file->vn_dev.chardev;
+  KASSERT(dev);
+  int ret = dev->cd_ops->write(dev, pos, buf, count);
+  vlock(file);
+  return ret;
 }
 
 /*
  * For this and the following chardev functions, simply defer to the underlying
  * chardev's corresponding operations.
  */
-static long chardev_file_mmap(vnode_t *file, mobj_t **ret)
-{
-    NOT_YET_IMPLEMENTED("VM: chardev_file_mmap");
-    return 0;
+static long chardev_file_mmap(vnode_t *file, mobj_t **ret) {
+  NOT_YET_IMPLEMENTED("VM: chardev_file_mmap");
+  return 0;
 }
 
-static long chardev_file_fill_pframe(vnode_t *file, pframe_t *pf)
-{
-    NOT_YET_IMPLEMENTED("VM: chardev_file_fill_pframe");
-    return 0;
+static long chardev_file_fill_pframe(vnode_t *file, pframe_t *pf) {
+  NOT_YET_IMPLEMENTED("VM: chardev_file_fill_pframe");
+  return 0;
 }
 
-static long chardev_file_flush_pframe(vnode_t *file, pframe_t *pf)
-{
-    NOT_YET_IMPLEMENTED("VM: chardev_file_flush_pframe");
-    return 0;
+static long chardev_file_flush_pframe(vnode_t *file, pframe_t *pf) {
+  NOT_YET_IMPLEMENTED("VM: chardev_file_flush_pframe");
+  return 0;
 }
 
 static ssize_t blockdev_file_read(vnode_t *file, size_t pos, void *buf,
-                                  size_t count)
-{
-    return -ENOTSUP;
+                                  size_t count) {
+  return -ENOTSUP;
 }
 
 static long blockdev_file_write(vnode_t *file, size_t pos, const void *buf,
-                                size_t count)
-{
-    return -ENOTSUP;
+                                size_t count) {
+  return -ENOTSUP;
 }
 
 static long blockdev_file_mmap(vnode_t *file, mobj_t **ret) { return -ENOTSUP; }
 
-static long blockdev_file_fill_pframe(vnode_t *file, pframe_t *pf)
-{
-    return -ENOTSUP;
+static long blockdev_file_fill_pframe(vnode_t *file, pframe_t *pf) {
+  return -ENOTSUP;
 }
 
-static long blockdev_file_flush_pframe(vnode_t *file, pframe_t *pf)
-{
-    return -ENOTSUP;
+static long blockdev_file_flush_pframe(vnode_t *file, pframe_t *pf) {
+  return -ENOTSUP;
 }
