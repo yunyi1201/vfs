@@ -10,6 +10,7 @@
 #include "fs/vnode.h"
 #include "globals.h"
 #include "kernel.h"
+#include "proc/kmutex.h"
 #include "util/debug.h"
 #include "util/string.h"
 
@@ -305,8 +306,40 @@ long do_mkdir(const char *path) {
  *  - Lock/unlock the vnode when calling its rmdir operation.
  */
 long do_rmdir(const char *path) {
-  NOT_YET_IMPLEMENTED("VFS: do_rmdir");
-  return -1;
+  struct vnode *dir_vnode;
+  const char *basename = NULL;
+  size_t namelen = 0;
+  long ret = namev_dir(curproc->p_cwd, path, &dir_vnode, &basename, &namelen);
+  if (ret < 0) {
+    return ret;
+  }
+
+  if (!S_ISDIR(dir_vnode->vn_mode)) {
+    vput(&dir_vnode);
+    return -ENOTDIR;
+  }
+
+  if (strcmp(basename, ".") == 0) {
+    vput(&dir_vnode);
+    return -EINVAL;
+  }
+
+  if (strcmp(basename, "..") == 0) {
+    vput(&dir_vnode);
+    return -ENOTEMPTY;
+  }
+
+  if (namelen > NAME_LEN) {
+    vput(&dir_vnode);
+    return -ENAMETOOLONG;
+  }
+
+  vlock(dir_vnode);
+  KASSERT(dir_vnode->vn_ops->rmdir);
+  ret = dir_vnode->vn_ops->rmdir(dir_vnode, basename, namelen);
+  vunlock(dir_vnode);
+  vput(&dir_vnode);
+  return ret;
 }
 
 /*
@@ -461,8 +494,63 @@ long do_link(const char *oldpath, const char *newpath) {
  * P.S. This scheme /probably/ works, but we're not 100% sure.
  */
 long do_rename(const char *oldpath, const char *newpath) {
-  NOT_YET_IMPLEMENTED("VFS: do_rename");
-  return -1;
+  fs_t *fs;
+  struct vnode *old_dir_vnode, *new_dir_vnode;
+  const char *old_basename = NULL, *new_basename = NULL;
+
+  size_t old_namelen = 0, new_namelen = 0;
+  long ret;
+
+  // Get the old directory vnode
+  ret = namev_dir(curproc->p_cwd, oldpath, &old_dir_vnode, &old_basename,
+                  &old_namelen);
+  if (ret < 0) {
+    return ret;
+  }
+
+  // Get the new directory vnode
+  ret = namev_dir(curproc->p_cwd, newpath, &new_dir_vnode, &new_basename,
+                  &new_namelen);
+  if (ret < 0) {
+    vput(&old_dir_vnode);
+    return ret;
+  }
+
+  // Check if the name lengths are too long
+  if (old_namelen > NAME_LEN || new_namelen > NAME_LEN) {
+    vput(&old_dir_vnode);
+    vput(&new_dir_vnode);
+    return -ENAMETOOLONG;
+  }
+
+  // Check if the old and new directories are valid
+  if (!S_ISDIR(old_dir_vnode->vn_mode) || !S_ISDIR(new_dir_vnode->vn_mode)) {
+    vput(&old_dir_vnode);
+    vput(&new_dir_vnode);
+    return -ENOTDIR;
+  }
+  KASSERT(old_dir_vnode->vn_fs && old_dir_vnode->vn_fs == new_dir_vnode->vn_fs);
+
+  fs = old_dir_vnode->vn_fs;
+  // lock the global filesystem vnode_rename_mutex
+  kmutex_lock(&fs->vnode_rename_mutex);
+  // Lock the directories in ancestor-first order
+  vlock_in_order(old_dir_vnode, new_dir_vnode);
+
+  // Perform the rename operation
+  KASSERT(old_dir_vnode->vn_ops->rename);
+  ret = old_dir_vnode->vn_ops->rename(old_dir_vnode, old_basename, old_namelen,
+                                      new_dir_vnode, new_basename, new_namelen);
+
+  // Unlock the directories
+  vunlock_in_order(old_dir_vnode, new_dir_vnode);
+  kmutex_unlock(&fs->vnode_rename_mutex);
+
+  // Release the vnodes
+  vput(&old_dir_vnode);
+  vput(&new_dir_vnode);
+
+  return ret;
 }
 
 /* Set the current working directory to the directory represented by path.
