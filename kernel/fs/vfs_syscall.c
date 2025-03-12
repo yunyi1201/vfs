@@ -84,8 +84,10 @@ ssize_t do_write(int fd, const void *buf, size_t len) {
   }
 
   ssize_t ret = vnode->vn_ops->write(vnode, file->f_pos, buf, len);
-  vunlo
-  return -1;
+  vunlock(vnode);
+  file->f_pos += ret;
+  fput(&file);
+  return ret;
 }
 
 /*
@@ -100,8 +102,15 @@ ssize_t do_write(int fd, const void *buf, size_t len) {
  * Consider what happens when we open a file and what counts as closing it
  */
 long do_close(int fd) {
-  NOT_YET_IMPLEMENTED("VFS: do_close");
-  return -1;
+  KASSERT(curproc);
+  if (fd < 0 || fd >= NFILES || curproc->p_files[fd] == NULL) {
+    return -EBADF;
+  }
+  // if (curproc->p_files[fd]->f_refcount == 1) {
+  //   vput(&curproc->p_files[fd]->f_vnode);
+  // }
+  fput(&curproc->p_files[fd]);
+  return 0;
 }
 
 /*
@@ -114,8 +123,22 @@ long do_close(int fd) {
  * Hint: Use get_empty_fd() to obtain an available file descriptor.
  */
 long do_dup(int fd) {
-  NOT_YET_IMPLEMENTED("VFS: do_dup");
-  return -1;
+  KASSERT(curproc);
+  struct file *file = fget(fd);
+  int ret, new_fd;
+  if (!file) {
+    return -EBADF;
+  }
+
+  ret = get_empty_fd(&new_fd);
+  if (ret < 0) {
+    fput(&file);
+    return ret;
+  }
+  fref(file);
+  curproc->p_files[new_fd] = file;
+  fput(&file);
+  return new_fd;
 }
 
 /*
@@ -129,8 +152,29 @@ long do_dup(int fd) {
  * (If supporting MTP, this action must be atomic)
  */
 long do_dup2(int ofd, int nfd) {
-  NOT_YET_IMPLEMENTED("VFS: do_dup2");
-  return -1;
+  if (ofd < 0 || ofd >= NFILES || nfd < 0 || nfd >= NFILES) {
+    return -EBADF;
+  }
+
+  struct file *file = fget(ofd);
+  if (!file) {
+    return -EBADF;
+  }
+
+  if (ofd == nfd) {
+    fput(&file);
+    return nfd;
+  }
+
+  struct file *file_2 = curproc->p_files[nfd];
+  if (file_2) {
+    fput(&curproc->p_files[nfd]);
+  }
+
+  fref(file);
+  curproc->p_files[nfd] = file;
+  fput(&file);
+  return nfd;
 }
 
 /*
@@ -151,8 +195,21 @@ long do_dup2(int ofd, int nfd) {
  *    but doing so would likely cause problems elsewhere)
  */
 long do_mknod(const char *path, int mode, devid_t devid) {
-  NOT_YET_IMPLEMENTED("VFS: do_mknod");
-  return -1;
+  if (!S_ISCHR(mode) && !S_ISBLK(mode) && !S_ISREG(mode)) {
+    return -EINVAL;
+  }
+
+  int ret;
+  vnode_t *res_vnode;
+
+  KASSERT(curproc && curproc->p_cwd);
+  ret = namev_open(curproc->p_cwd, path, O_CREAT, mode, devid, &res_vnode);
+  if (ret < 0) {
+    return ret;
+  }
+
+  vput(&res_vnode);
+  return 0;
 }
 
 /*
@@ -176,8 +233,59 @@ long do_mknod(const char *path, int mode, devid_t devid) {
  *    namev_lookup().
  */
 long do_mkdir(const char *path) {
-  NOT_YET_IMPLEMENTED("VFS: do_mkdir");
-  return -1;
+  vnode_t *parent_vnode;
+  vnode_t *result_vnode;
+  vnode_t *dir_vnode;
+  size_t namelen;
+  const char *name;
+  int ret;
+
+  // Find the parent directory vnode
+  KASSERT(curproc && curproc->p_cwd);
+  ret = namev_dir(curproc->p_cwd, path, &parent_vnode, &name, &namelen);
+  if (ret < 0) {
+    return ret;
+  }
+
+  // Check if the name length is too long
+  if (namelen > NAME_LEN) {
+    vput(&parent_vnode);
+    return -ENAMETOOLONG;
+  }
+
+  // Check if the directory already exists
+  vlock(parent_vnode);
+  ret = namev_lookup(parent_vnode, name, namelen, &result_vnode);
+  if (ret == 0) {
+    vunlock(parent_vnode);
+    vput(&result_vnode);
+    vput(&parent_vnode);
+    return -EEXIST;
+  } else if (ret != -ENOENT) {
+    vunlock(parent_vnode);
+    vput(&parent_vnode);
+    return ret;
+  }
+
+  // Create the directory
+  if (!S_ISDIR(parent_vnode->vn_mode)) {
+    vunlock(parent_vnode);
+    vput(&parent_vnode);
+    return -ENOTDIR;
+  }
+
+  KASSERT(NULL != parent_vnode->vn_ops->mkdir);
+  ret = parent_vnode->vn_ops->mkdir(parent_vnode, name, namelen, &dir_vnode);
+  if (ret < 0) {
+    vunlock(parent_vnode);
+    vput(&parent_vnode);
+    return ret;
+  }
+
+  vunlock(parent_vnode);
+  vput(&dir_vnode);
+  vput(&parent_vnode);
+  return ret;
 }
 
 /*
@@ -290,8 +398,25 @@ long do_rename(const char *oldpath, const char *newpath) {
  *  - (If doing MTP, must protect access to p_cwd)
  */
 long do_chdir(const char *path) {
-  NOT_YET_IMPLEMENTED("VFS: do_chdir");
-  return -1;
+  struct vnode *vnode = NULL;
+  long ret = namev_resolve(curproc->p_cwd, path, &vnode);
+  if (ret != 0) {
+    if (vnode) {
+      vput(&vnode);
+    }
+    return ret;
+  }
+  if (!S_ISDIR(vnode->vn_mode)) {
+    vput(&vnode);
+    return -ENOTDIR;
+  }
+
+  if (curproc->p_cwd) {
+    vput(&curproc->p_cwd);
+  }
+  vref(curproc->p_cwd = vnode);
+  vput(&vnode);
+  return 0;
 }
 
 /*
