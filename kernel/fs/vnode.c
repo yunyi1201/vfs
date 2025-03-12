@@ -234,7 +234,7 @@ static void vnode_destructor(mobj_t *o)
     KASSERT(!o->mo_refcount);
     KASSERT(!kmutex_has_waiters(&o->mo_mutex));
     mobj_flush(o);
-    if (vn->vn_fs->fs_ops->delete_vnode)
+    if (vn->vn_fs->fs_ops->delete_vnode) // no vnode reference inode, decrease reference count by 1.
     {
         vn->vn_fs->fs_ops->delete_vnode(vn->vn_fs, vn);
     }
