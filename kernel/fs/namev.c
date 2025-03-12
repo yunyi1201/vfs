@@ -149,7 +149,6 @@ static const char *namev_tokenize(const char **search, size_t *len) {
  */
 long namev_dir(vnode_t *base, const char *path, vnode_t **res_vnode,
                const char **name, size_t *namelen) {
-  REF_CONTRACT_INIT(1);
   if (!path || !*path) {
     return -EINVAL;
   }
@@ -199,7 +198,6 @@ long namev_dir(vnode_t *base, const char *path, vnode_t **res_vnode,
   *res_vnode = cur;
   *name = token;
   *namelen = token_len;
-  REF_CONTRACT_FIN(1);
   return 0;
 }
 

@@ -1,4 +1,7 @@
 #include "fs/vfs_syscall.h"
+
+#include <limits.h>
+
 #include "errno.h"
 #include "fs/fcntl.h"
 #include "fs/file.h"
@@ -9,7 +12,6 @@
 #include "kernel.h"
 #include "util/debug.h"
 #include "util/string.h"
-#include <limits.h>
 
 /*
  * Read len bytes into buf from the fd's file using the file's vnode operation
@@ -24,10 +26,28 @@
  *  - Be sure to update the file's position appropriately.
  *  - Lock/unlock the file's vnode when calling its read operation.
  */
-ssize_t do_read(int fd, void *buf, size_t len)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_read");
-    return -1;
+ssize_t do_read(int fd, void *buf, size_t len) {
+  KASSERT(curproc);
+  struct file *file = fget(fd);
+  if (!file || (file->f_mode & FMODE_READ) == 0) {
+    if (file) {
+      fput(&file);
+    }
+    return -EBADF;
+  }
+  struct vnode *vnode = file->f_vnode;
+  if (S_ISDIR(vnode->vn_mode)) {
+    fput(&file);
+    return -EISDIR;
+  }
+
+  vlock(vnode);
+  KASSERT(vnode->vn_ops->read);
+  ssize_t ret = vnode->vn_ops->read(vnode, file->f_pos, buf, len);
+  vunlock(vnode);
+  file->f_pos += ret;
+  fput(&file);
+  return ret;
 }
 
 /*
@@ -44,10 +64,28 @@ ssize_t do_read(int fd, void *buf, size_t len)
  *  - Be sure to update the file's position appropriately.
  *  - Lock/unlock the file's vnode when calling its write operation.
  */
-ssize_t do_write(int fd, const void *buf, size_t len)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_write");
-    return -1;
+ssize_t do_write(int fd, const void *buf, size_t len) {
+  KASSERT(curproc);
+
+  struct file *file = fget(fd);
+  if (!file || (file->f_mode & FMODE_WRITE) == 0) {
+    if (file) {
+      fput(&file);
+    }
+    return -EBADF;
+  }
+
+  struct vnode *vnode = file->f_vnode;
+  vlock(vnode);
+  KASSERT(vnode->vn_ops->write);
+
+  if (file->f_mode & FMODE_APPEND) {
+    file->f_pos = vnode->vn_len;
+  }
+
+  ssize_t ret = vnode->vn_ops->write(vnode, file->f_pos, buf, len);
+  vunlo
+  return -1;
 }
 
 /*
@@ -55,16 +93,15 @@ ssize_t do_write(int fd, const void *buf, size_t len)
  *
  * Return 0 on success, or:
  *  - EBADF: fd is invalid or not open
- * 
- * Hints: 
- * Check `proc.h` to see if there are any helpful fields in the 
- * proc_t struct for checking if the file associated with the fd is open. 
+ *
+ * Hints:
+ * Check `proc.h` to see if there are any helpful fields in the
+ * proc_t struct for checking if the file associated with the fd is open.
  * Consider what happens when we open a file and what counts as closing it
  */
-long do_close(int fd)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_close");
-    return -1;
+long do_close(int fd) {
+  NOT_YET_IMPLEMENTED("VFS: do_close");
+  return -1;
 }
 
 /*
@@ -76,10 +113,9 @@ long do_close(int fd)
  *
  * Hint: Use get_empty_fd() to obtain an available file descriptor.
  */
-long do_dup(int fd)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_dup");
-    return -1;
+long do_dup(int fd) {
+  NOT_YET_IMPLEMENTED("VFS: do_dup");
+  return -1;
 }
 
 /*
@@ -92,10 +128,9 @@ long do_dup(int fd)
  * Hint: You don't need to do anything if ofd and nfd are the same.
  * (If supporting MTP, this action must be atomic)
  */
-long do_dup2(int ofd, int nfd)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_dup2");
-    return -1;
+long do_dup2(int ofd, int nfd) {
+  NOT_YET_IMPLEMENTED("VFS: do_dup2");
+  return -1;
 }
 
 /*
@@ -107,18 +142,17 @@ long do_dup2(int ofd, int nfd)
  *
  * Hints:
  *  - Create the file by calling namev_open() with the O_CREAT flag.
- *  - Be careful about refcounts after calling namev_open(). The newly created 
- *    vnode should have no references when do_mknod returns. The underlying 
- *    filesystem is responsible for maintaining references to the inode, which 
- *    will prevent it from being destroyed, even if the corresponding vnode is 
+ *  - Be careful about refcounts after calling namev_open(). The newly created
+ *    vnode should have no references when do_mknod returns. The underlying
+ *    filesystem is responsible for maintaining references to the inode, which
+ *    will prevent it from being destroyed, even if the corresponding vnode is
  *    cleaned up.
- *  - You don't need to handle EEXIST (this would be handled within namev_open, 
+ *  - You don't need to handle EEXIST (this would be handled within namev_open,
  *    but doing so would likely cause problems elsewhere)
  */
-long do_mknod(const char *path, int mode, devid_t devid)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_mknod");
-    return -1;
+long do_mknod(const char *path, int mode, devid_t devid) {
+  NOT_YET_IMPLEMENTED("VFS: do_mknod");
+  return -1;
 }
 
 /*
@@ -141,10 +175,9 @@ long do_mknod(const char *path, int mode, devid_t devid)
  *  - Be careful about locking and refcounts after calling namev_dir() and
  *    namev_lookup().
  */
-long do_mkdir(const char *path)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_mkdir");
-    return -1;
+long do_mkdir(const char *path) {
+  NOT_YET_IMPLEMENTED("VFS: do_mkdir");
+  return -1;
 }
 
 /*
@@ -163,10 +196,9 @@ long do_mkdir(const char *path)
  *  - Use the parent directory's rmdir operation to remove the directory.
  *  - Lock/unlock the vnode when calling its rmdir operation.
  */
-long do_rmdir(const char *path)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_rmdir");
-    return -1;
+long do_rmdir(const char *path) {
+  NOT_YET_IMPLEMENTED("VFS: do_rmdir");
+  return -1;
 }
 
 /*
@@ -181,10 +213,9 @@ long do_rmdir(const char *path)
  *  - Use namev_dir() and be careful about refcounts.
  *  - Lock/unlock the parent directory when calling its unlink operation.
  */
-long do_unlink(const char *path)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_unlink");
-    return -1;
+long do_unlink(const char *path) {
+  NOT_YET_IMPLEMENTED("VFS: do_unlink");
+  return -1;
 }
 
 /*
@@ -204,10 +235,9 @@ long do_unlink(const char *path)
  * 6) Make sure to clean up references added from calling namev_resolve() and
  *    namev_dir().
  */
-long do_link(const char *oldpath, const char *newpath)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_link");
-    return -1;
+long do_link(const char *oldpath, const char *newpath) {
+  NOT_YET_IMPLEMENTED("VFS: do_link");
+  return -1;
 }
 
 /* Rename a file or directory.
@@ -242,10 +272,9 @@ long do_link(const char *oldpath, const char *newpath)
  *
  * P.S. This scheme /probably/ works, but we're not 100% sure.
  */
-long do_rename(const char *oldpath, const char *newpath)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_rename");
-    return -1;
+long do_rename(const char *oldpath, const char *newpath) {
+  NOT_YET_IMPLEMENTED("VFS: do_rename");
+  return -1;
 }
 
 /* Set the current working directory to the directory represented by path.
@@ -260,10 +289,9 @@ long do_rename(const char *oldpath, const char *newpath)
  *  - Remember that p_cwd should not be locked upon return from this function.
  *  - (If doing MTP, must protect access to p_cwd)
  */
-long do_chdir(const char *path)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_chdir");
-    return -1;
+long do_chdir(const char *path) {
+  NOT_YET_IMPLEMENTED("VFS: do_chdir");
+  return -1;
 }
 
 /*
@@ -280,10 +308,9 @@ long do_chdir(const char *path)
  *  - On success (readdir return value is strictly positive), return
  *    sizeof(dirent_t).
  */
-ssize_t do_getdent(int fd, struct dirent *dirp)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_getdent");
-    return -1;
+ssize_t do_getdent(int fd, struct dirent *dirp) {
+  NOT_YET_IMPLEMENTED("VFS: do_getdent");
+  return -1;
 }
 
 /*
@@ -299,10 +326,9 @@ ssize_t do_getdent(int fd, struct dirent *dirp)
  *  - See `man 2 lseek` for details about whence.
  *  - Be sure to protect the vnode if you have to access its vn_len.
  */
-off_t do_lseek(int fd, off_t offset, int whence)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_lseek");
-    return -1;
+off_t do_lseek(int fd, off_t offset, int whence) {
+  NOT_YET_IMPLEMENTED("VFS: do_lseek");
+  return -1;
 }
 
 /* Use buf to return the status of the file represented by path.
@@ -310,10 +336,9 @@ off_t do_lseek(int fd, off_t offset, int whence)
  * Return 0 on success, or:
  *  - Propagate errors from namev_resolve() and the vnode operation stat.
  */
-long do_stat(const char *path, stat_t *buf)
-{
-    NOT_YET_IMPLEMENTED("VFS: do_stat");
-    return -1;
+long do_stat(const char *path, stat_t *buf) {
+  NOT_YET_IMPLEMENTED("VFS: do_stat");
+  return -1;
 }
 
 #ifdef __MOUNTING__
@@ -333,10 +358,9 @@ long do_stat(const char *path, stat_t *buf)
  * error handling. Remember the fs_dev and fs_type buffers have limited size
  * so you should not write arbitrary length strings to them.
  */
-int do_mount(const char *source, const char *target, const char *type)
-{
-    NOT_YET_IMPLEMENTED("MOUNTING: do_mount");
-    return -EINVAL;
+int do_mount(const char *source, const char *target, const char *type) {
+  NOT_YET_IMPLEMENTED("MOUNTING: do_mount");
+  return -EINVAL;
 }
 
 /*
@@ -348,9 +372,8 @@ int do_mount(const char *source, const char *target, const char *type)
  * this function does is figure out which file system to pass to vfs_umount and
  * do good error checking.
  */
-int do_umount(const char *target)
-{
-    NOT_YET_IMPLEMENTED("MOUNTING: do_umount");
-    return -EINVAL;
+int do_umount(const char *target) {
+  NOT_YET_IMPLEMENTED("MOUNTING: do_umount");
+  return -EINVAL;
 }
 #endif
