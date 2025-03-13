@@ -304,8 +304,41 @@ ssize_t s5_read_file(s5_node_t *sn, size_t pos, char *buf, size_t len) {
  * the inode to be the same.
  */
 ssize_t s5_write_file(s5_node_t *sn, size_t pos, const char *buf, size_t len) {
-  NOT_YET_IMPLEMENTED("S5FS: s5_write_file");
-  return -1;
+  ssize_t ret;
+  size_t total_writed = 0;
+  pframe_t *pf;
+  do {
+    if (pos >= S5_MAX_FILE_SIZE || pos + len > S5_MAX_FILE_SIZE) {
+      return -EFBIG;
+    }
+
+    size_t writed = (pos % S5_BLOCK_SIZE + len > S5_BLOCK_SIZE)
+                        ? S5_BLOCK_SIZE - pos % S5_BLOCK_SIZE
+                        : len;
+    size_t blocknum = pos / S5_BLOCK_SIZE;
+    size_t undo_len = sn->vnode.vn_len;
+
+    if (pos + writed > sn->vnode.vn_len) {
+      sn->inode.s5_un.s5_size = sn->vnode.vn_len =
+          (sn->vnode.vn_len + (pos + writed - sn->vnode.vn_len));
+    }
+    sn->dirtied_inode = 1;
+
+    ret = s5_get_file_block(sn, blocknum, 1, &pf);
+    if (ret < 0) {
+      // undo changes
+      sn->inode.s5_un.s5_size = sn->vnode.vn_len = undo_len;
+      return ret;
+    }
+    memcpy(((char *)pf->pf_addr + pos % S5_BLOCK_SIZE), buf, writed);
+    s5_release_disk_block(&pf);
+    len -= writed;
+    buf += writed;
+    pos += writed;
+    total_writed += writed;
+  } while (len > 0);
+  KASSERT(sn->vnode.vn_len == sn->inode.s5_un.s5_size);
+  return total_writed;
 }
 
 /* Allocate one block from the filesystem.
