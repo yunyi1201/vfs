@@ -174,8 +174,39 @@ pframe_t *s5_cache_and_clear_block(mobj_t *mo, long block, long loc) {
  * blocks
  */
 ssize_t s5_read_file(s5_node_t *sn, size_t pos, char *buf, size_t len) {
-  NOT_YET_IMPLEMENTED("S5FS: s5_read_file");
-  return -1;
+  size_t length;
+  ssize_t total_readed = 0;
+  pframe_t *pf;
+
+  KASSERT(sn->inode.s5_number == sn->vnode.vn_vno);
+  KASSERT(sn->inode.s5_un.s5_size == sn->vnode.vn_len);
+  if (pos >= sn->vnode.vn_len) {
+    return 0;
+  } else if (pos + len > sn->vnode.vn_len) {
+    length = sn->vnode.vn_len - pos;
+  } else {
+    length = len;
+  }
+
+  do {
+    long ret = s5_get_file_block(sn, pos / S5_BLOCK_SIZE, 0, &pf);
+    if (ret < 0) {
+      s5_release_file_block(&pf);
+      return ret;
+    }
+    size_t readed = (pos % S5_BLOCK_SIZE + length > S5_BLOCK_SIZE)
+                        ? S5_BLOCK_SIZE - pos % S5_BLOCK_SIZE
+                        : length;
+    memcpy(buf, ((char *)pf->pf_addr + pos % S5_BLOCK_SIZE), readed);
+    s5_release_file_block(&pf);
+
+    buf += readed;
+    length -= readed;
+    pos += readed;
+    total_readed += readed;
+  } while (length > 0);
+
+  return total_readed;
 }
 
 /* Write to a file.
