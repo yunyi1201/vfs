@@ -6,6 +6,7 @@
 #include "fs/vfs.h"
 #include "fs/vnode.h"
 #include "kernel.h"
+#include "mm/mobj.h"
 #include "mm/pframe.h"
 #include "proc/kmutex.h"
 #include "types.h"
@@ -125,8 +126,69 @@ static inline void s5_release_file_block(pframe_t **pfp) {
  */
 long s5_file_block_to_disk_block(s5_node_t *sn, size_t file_blocknum, int alloc,
                                  int *newp) {
-  NOT_YET_IMPLEMENTED("S5FS: s5_file_block_to_disk_block");
-  return -1;
+  *newp = 0;
+  s5_inode_t *inode = &sn->inode;
+  if (file_blocknum >= S5_MAX_FILE_BLOCKS) {
+    return -EINVAL;
+  }
+
+  // Case 1: Direct block
+  if (file_blocknum < S5_NDIRECT_BLOCKS) {
+    // need allocate block.
+    if (inode->s5_direct_blocks[file_blocknum] == 0 && alloc) {
+      long new_block = s5_alloc_block(VNODE_TO_S5FS(&sn->vnode));
+      if (new_block < 0) {
+        return new_block;
+      }
+      *newp = 1;
+      inode->s5_direct_blocks[file_blocknum] = new_block;
+      sn->dirtied_inode = 1;
+    }
+    // if the block is non-allocated, then return 0.
+    return inode->s5_direct_blocks[file_blocknum];
+  }
+
+  // Case 2: Indirect block
+  file_blocknum -= S5_NDIRECT_BLOCKS;
+
+  if (inode->s5_indirect_block == 0) {
+    if (!alloc) {
+      return 0;
+    }
+    long new_block = s5_alloc_block(VNODE_TO_S5FS(&sn->vnode));
+    if (new_block < 0) {
+      return new_block;
+    }
+    inode->s5_indirect_block = new_block;
+    sn->dirtied_inode = 1;
+
+    // Allocate the indirect block with all 0s
+    s5fs_t *s5_fs = VNODE_TO_S5FS(&sn->vnode);
+    mobj_lock(&s5_fs->s5f_mobj);
+    pframe_t *pf =
+        s5_cache_and_clear_block(&s5_fs->s5f_mobj, new_block, new_block);
+    KASSERT(kmutex_owns_mutex(&pf->pf_mutex));
+    kmutex_unlock(&pf->pf_mutex);
+    mobj_unlock(&s5_fs->s5f_mobj);
+  }
+
+  pframe_t *pf;
+  s5_get_meta_disk_block(VNODE_TO_S5FS(&sn->vnode), inode->s5_indirect_block, 1,
+                         &pf);
+  uint32_t *indirect_blocks = (uint32_t *)pf->pf_addr;
+  if (indirect_blocks[file_blocknum] == 0 && alloc) {
+    long new_block = s5_alloc_block(VNODE_TO_S5FS(&sn->vnode));
+    if (new_block < 0) {
+      s5_release_disk_block(&pf);
+      return new_block;
+    }
+    *newp = 1;
+    indirect_blocks[file_blocknum] = new_block;
+    sn->dirtied_inode = 1;
+  }
+  long result = indirect_blocks[file_blocknum];
+  s5_release_disk_block(&pf);
+  return result;
 }
 
 /* Given a mobj and a block, clear any data in the block and store a newly
