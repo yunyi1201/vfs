@@ -364,8 +364,25 @@ ssize_t s5_write_file(s5_node_t *sn, size_t pos, const char *buf, size_t len) {
  *  - You may assume/assert that any pframe calls succeed.
  */
 static long s5_alloc_block(s5fs_t *s5fs) {
-  NOT_YET_IMPLEMENTED("S5FS: s5_alloc_block");
-  return -1;
+  s5_lock_super(s5fs);
+  s5_super_t *s = &s5fs->s5f_super;
+  if (s->s5s_nfree == 0) {
+    if (s->s5s_free_blocks[S5_NBLKS_PER_FNODE - 1] == (uint32_t)-1) {
+      s5_unlock_super(s5fs);
+      return -ENOSPC;
+    }
+
+    pframe_t *pf;
+    s5_get_meta_disk_block(s5fs, s->s5s_free_blocks[S5_NBLKS_PER_FNODE - 1], 1,
+                           &pf);
+    memcpy(s->s5s_free_blocks, pf->pf_addr, sizeof(s->s5s_free_blocks));
+    s->s5s_nfree = S5_NBLKS_PER_FNODE - 1;
+    s5_release_disk_block(&pf);
+  }
+
+  long blockno = s->s5s_free_blocks[--s->s5s_nfree];
+  s5_unlock_super(s5fs);
+  return blockno;
 }
 
 /*
