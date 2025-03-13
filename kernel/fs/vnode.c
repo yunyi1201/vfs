@@ -233,10 +233,10 @@ static void vnode_destructor(mobj_t *o)
     vlock(vn);
     KASSERT(!o->mo_refcount);
     KASSERT(!kmutex_has_waiters(&o->mo_mutex));
-    mobj_flush(o);
+    mobj_flush(o);                       // flush all page frame to disk.
     if (vn->vn_fs->fs_ops->delete_vnode) // no vnode reference inode, decrease reference count by 1.
     {
-        vn->vn_fs->fs_ops->delete_vnode(vn->vn_fs, vn);
+        vn->vn_fs->fs_ops->delete_vnode(vn->vn_fs, vn); // wrapper function for fs deallocate inode.
     }
     KASSERT(!kmutex_has_waiters(&o->mo_mutex));
     vunlock(vn);

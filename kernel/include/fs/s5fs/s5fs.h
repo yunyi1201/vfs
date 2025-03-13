@@ -75,59 +75,54 @@ typedef struct s5_fbl_node {
  * inter-machine compatibility of s5 disks) */
 
 /* The contents of the superblock, as stored on disk. */
-typedef struct s5_super
-{
-    uint32_t s5s_magic;      /* the magic number */
-    uint32_t s5s_free_inode; /* the free inode pointer */
-    uint32_t s5s_nfree;      /* number of blocks currently in
-                              * s5s_free_blocks */
-    /* First "node" of free block list */
-    uint32_t s5s_free_blocks[S5_NBLKS_PER_FNODE];
+typedef struct s5_super {
+  uint32_t s5s_magic;      /* the magic number */
+  uint32_t s5s_free_inode; /* the free inode pointer */
+  uint32_t s5s_nfree;      /* number of blocks currently in
+                            * s5s_free_blocks */
+  /* First "node" of free block list */
+  uint32_t s5s_free_blocks[S5_NBLKS_PER_FNODE];
 
-    uint32_t s5s_root_inode; /* root inode */
-    uint32_t s5s_num_inodes; /* number of inodes */
-    uint32_t s5s_version;    /* version of this disk format */
+  uint32_t s5s_root_inode; /* root inode */
+  uint32_t s5s_num_inodes; /* number of inodes */
+  uint32_t s5s_version;    /* version of this disk format */
 } s5_super_t;
 
 /* The contents of an inode, as stored on disk. */
-typedef struct s5_inode
-{
-    union {
-        uint32_t s5_next_free; /* inode free list ptr */
-        uint32_t s5_size;      /* file size */
-    } s5_un;
-    uint32_t s5_number;   /* this inode's number */
-    uint16_t s5_type;     /* one of S5_TYPE_{FREE,DATA,DIR,CHR,BLK} */
-    int16_t s5_linkcount; /* link count of this inode */
-    uint32_t s5_direct_blocks[S5_NDIRECT_BLOCKS];
-    uint32_t s5_indirect_block;
+typedef struct s5_inode {
+  union {
+    uint32_t s5_next_free; /* inode free list ptr */
+    uint32_t s5_size;      /* file size */
+  } s5_un;
+  uint32_t s5_number;   /* this inode's number */
+  uint16_t s5_type;     /* one of S5_TYPE_{FREE,DATA,DIR,CHR,BLK} */
+  int16_t s5_linkcount; /* link count of this inode */
+  uint32_t s5_direct_blocks[S5_NDIRECT_BLOCKS];
+  uint32_t s5_indirect_block;
 } s5_inode_t;
 
-typedef struct s5_node
-{
-    vnode_t vnode;
-    s5_inode_t inode;
-    long dirtied_inode;
+typedef struct s5_node {
+  vnode_t vnode;
+  s5_inode_t inode;
+  long dirtied_inode;
 } s5_node_t;
 
 #define VNODE_TO_S5NODE(vn) CONTAINER_OF(vn, s5_node_t, vnode)
 
 /* The contents of a directory entry, as stored on disk. */
-typedef struct s5_dirent
-{
-    uint32_t s5d_inode;
-    char s5d_name[S5_NAME_LEN];
+typedef struct s5_dirent {
+  uint32_t s5d_inode;
+  char s5d_name[S5_NAME_LEN];
 } s5_dirent_t;
 
 #ifndef __FSMAKER__
 /* Our in-memory representation of a s5fs filesytem (fs_i points to this) */
-typedef struct s5fs
-{
-    blockdev_t *s5f_bdev;
-    s5_super_t s5f_super;
-    kmutex_t s5f_mutex;
-    fs_t *s5f_fs;
-    mobj_t s5f_mobj;
+typedef struct s5fs {
+  blockdev_t *s5f_bdev;
+  s5_super_t s5f_super;
+  kmutex_t s5f_mutex;
+  fs_t *s5f_fs;
+  mobj_t s5f_mobj;
 } s5fs_t;
 
 long s5fs_mount(struct fs *fs);

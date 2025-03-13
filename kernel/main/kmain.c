@@ -141,7 +141,7 @@ static void *initproc_run(long arg1, void *arg2) {
 
   char *const argvec[] = {NULL};
   char *const envvec[] = {NULL};
-  kernel_execve("/sbin/init", argvec, envvec);  // will not return
+  kernel_execve("/sbin/init", argvec, envvec); // will not return
 
 #elif defined __DRIVERS__
 #ifndef __S5FS__
@@ -160,9 +160,10 @@ static void *initproc_run(long arg1, void *arg2) {
     KASSERT(thread);
     sched_make_runnable(thread);
   }
-#endif  // __VM__ elif __DRIVERS__
+#endif // __VM__ elif __DRIVERS__
 
-  while (do_waitpid(-1, &status, 0) != -ECHILD);
+  while (do_waitpid(-1, &status, 0) != -ECHILD)
+    ;
 
 #ifdef __VFS__
   // vlock(curproc->p_cwd);
@@ -207,7 +208,8 @@ void initproc_start() {
 
 void initproc_finish() {
 #ifdef __VFS__
-  if (vfs_shutdown()) panic("vfs shutdown FAILED!!\n");
+  if (vfs_shutdown())
+    panic("vfs shutdown FAILED!!\n");
 
 #endif
 

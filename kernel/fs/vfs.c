@@ -40,10 +40,9 @@ list_t mounted_fs_list;
  *
  * This function is not meant to mount the root file system.
  */
-int vfs_mount(struct vnode *mtpt, fs_t *fs)
-{
-    NOT_YET_IMPLEMENTED("MOUNTING: vfs_mount");
-    return -EINVAL;
+int vfs_mount(struct vnode *mtpt, fs_t *fs) {
+  NOT_YET_IMPLEMENTED("MOUNTING: vfs_mount");
+  return -EINVAL;
 }
 
 /*
@@ -59,10 +58,9 @@ int vfs_mount(struct vnode *mtpt, fs_t *fs)
  * try to call this function on the root file system (this function is not meant
  * to unmount the root file system).
  */
-int vfs_umount(fs_t *fs)
-{
-    NOT_YET_IMPLEMENTED("MOUNTING: vfs_umount");
-    return -EINVAL;
+int vfs_umount(fs_t *fs) {
+  NOT_YET_IMPLEMENTED("MOUNTING: vfs_umount");
+  return -EINVAL;
 }
 #endif /* __MOUNTING__ */
 
@@ -80,101 +78,85 @@ fs_t vfs_root_fs = {
 /*
  * Call mountfunc on vfs_root_fs and set curproc->p_cwd (reference count!)
  */
-void vfs_init()
-{
-    long err = mountfunc(&vfs_root_fs);
-    if (err)
-    {
-        panic(
-            "Failed to mount root fs of type \"%s\" on device "
-            "\"%s\" with errno of %ld\n",
-            vfs_root_fs.fs_type, vfs_root_fs.fs_dev, -err);
-    }
+void vfs_init() {
+  long err = mountfunc(&vfs_root_fs);
+  if (err) {
+    panic("Failed to mount root fs of type \"%s\" on device "
+          "\"%s\" with errno of %ld\n",
+          vfs_root_fs.fs_type, vfs_root_fs.fs_dev, -err);
+  }
 
-    vlock(vfs_root_fs.fs_root);
-    vref(curproc->p_cwd = vfs_root_fs.fs_root);
-    vunlock(vfs_root_fs.fs_root);
+  vlock(vfs_root_fs.fs_root);
+  vref(curproc->p_cwd = vfs_root_fs.fs_root);
+  vunlock(vfs_root_fs.fs_root);
 
 #ifdef __MOUNTING__
-    list_init(&mounted_fs_list);
-    fs->fs_mtpt = vfs_root_fs.fs_root;
+  list_init(&mounted_fs_list);
+  fs->fs_mtpt = vfs_root_fs.fs_root;
 #endif
 }
 
 /*
  * Wrapper around the sync call() to vfs_root_fs using fs_ops
  */
-void do_sync()
-{
-    vfs_root_fs.fs_ops->sync(&vfs_root_fs);
+void do_sync() {
+  vfs_root_fs.fs_ops->sync(&vfs_root_fs);
 #ifdef __MOUNTING__
-    // if implementing mounting, just sync() all the mounted FS's as well
+  // if implementing mounting, just sync() all the mounted FS's as well
 #endif
 }
 
 /*
  *
  */
-long vfs_shutdown()
-{
-    dbg(DBG_VFS, "shutting down vfs\n");
-    long ret = 0;
+long vfs_shutdown() {
+  dbg(DBG_VFS, "shutting down vfs\n");
+  long ret = 0;
 
 #ifdef __MOUNTING__
-    list_iterate(&mounted_fs_list, mtfs, fs_t, fs_link)
-    {
-        ret = vfs_umount(mtfs);
-        KASSERT(!ret);
-    }
+  list_iterate(&mounted_fs_list, mtfs, fs_t, fs_link) {
+    ret = vfs_umount(mtfs);
+    KASSERT(!ret);
+  }
 #endif
 
-    if (vfs_is_in_use(&vfs_root_fs))
-    {
-        panic("vfs_shutdown: found active vnodes in root filesystem");
-    }
+  if (vfs_is_in_use(&vfs_root_fs)) {
+    panic("vfs_shutdown: found active vnodes in root filesystem");
+  }
 
-    if (vfs_root_fs.fs_ops->umount)
-    {
-        ret = vfs_root_fs.fs_ops->umount(&vfs_root_fs);
-    }
-    else
-    {
-        // vlock(vfs_root_fs.fs_root);
-        vput(&vfs_root_fs.fs_root);
-    }
+  if (vfs_root_fs.fs_ops->umount) {
+    ret = vfs_root_fs.fs_ops->umount(&vfs_root_fs);
+  } else {
+    // vlock(vfs_root_fs.fs_root);
+    vput(&vfs_root_fs.fs_root);
+  }
 
-    if (vfs_count_active_vnodes(&vfs_root_fs))
-    {
-        panic(
-            "vfs_shutdown: vnodes still in use after unmounting root "
-            "filesystem");
-    }
-    return ret;
+  if (vfs_count_active_vnodes(&vfs_root_fs)) {
+    panic("vfs_shutdown: vnodes still in use after unmounting root "
+          "filesystem");
+  }
+  return ret;
 }
 
-long mountfunc(fs_t *fs)
-{
-    static const struct
-    {
-        char *fstype;
+long mountfunc(fs_t *fs) {
+  static const struct {
+    char *fstype;
 
-        long (*mountfunc)(fs_t *);
-    } types[] = {
+    long (*mountfunc)(fs_t *);
+  } types[] = {
 #ifdef __S5FS__
-        {"s5fs", s5fs_mount},
+      {"s5fs", s5fs_mount},
 #endif
-        {"ramfs", ramfs_mount},
-    };
+      {"ramfs", ramfs_mount},
+  };
 
-    for (unsigned int i = 0; i < sizeof(types) / sizeof(types[0]); i++)
-    {
-        if (strcmp(fs->fs_type, types[i].fstype) == 0)
-        {
-            return types[i].mountfunc(fs);
-        }
+  for (unsigned int i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+    if (strcmp(fs->fs_type, types[i].fstype) == 0) {
+      return types[i].mountfunc(fs);
     }
+  }
 
-    return -EINVAL;
+  return -EINVAL;
 }
 
 /*
@@ -184,39 +166,34 @@ long mountfunc(fs_t *fs)
  * Error cases vfs_is_in_use is responsible for generating:
  *  - EBUSY: if the filesystem is in use
  */
-long vfs_is_in_use(fs_t *fs)
-{
-    long ret = 0;
-    // kmutex_lock(&fs->vnode_list_mutex);
-    list_iterate(&fs->vnode_list, vn, vnode_t, vn_link)
-    {
-        vlock(vn);
-        size_t expected_refcount = vn->vn_fs->fs_root == vn ? 1 : 0;
-        size_t refcount = vn->vn_mobj.mo_refcount;
-        vunlock(vn);
-        if (refcount != expected_refcount)
-        {
-            dbg(DBG_VFS,
-                "vnode %d still in use with %d references and %lu mobj "
-                "references (expected %lu)\n",
-                vn->vn_vno, vn->vn_mobj.mo_refcount, refcount,
-                expected_refcount);
-            ret = -EBUSY;
-            // break;
-        }
+long vfs_is_in_use(fs_t *fs) {
+  long ret = 0;
+  // kmutex_lock(&fs->vnode_list_mutex);
+  list_iterate(&fs->vnode_list, vn, vnode_t, vn_link) {
+    vlock(vn);
+    size_t expected_refcount = vn->vn_fs->fs_root == vn ? 1 : 0;
+    size_t refcount = vn->vn_mobj.mo_refcount;
+    vunlock(vn);
+    if (refcount != expected_refcount) {
+      dbg(DBG_VFS,
+          "vnode %d still in use with %d references and %lu mobj "
+          "references (expected %lu)\n",
+          vn->vn_vno, vn->vn_mobj.mo_refcount, refcount, expected_refcount);
+      ret = -EBUSY;
+      // break;
     }
-    // kmutex_unlock(&fs->vnode_list_mutex);
-    return ret;
+  }
+  // kmutex_unlock(&fs->vnode_list_mutex);
+  return ret;
 }
 
 /*
  * Return the size of fs->vnode_list
  */
-size_t vfs_count_active_vnodes(fs_t *fs)
-{
-    size_t count = 0;
-    kmutex_lock(&fs->vnode_list_mutex);
-    list_iterate(&fs->vnode_list, vn, vnode_t, vn_link) { count++; }
-    kmutex_unlock(&fs->vnode_list_mutex);
-    return count;
+size_t vfs_count_active_vnodes(fs_t *fs) {
+  size_t count = 0;
+  kmutex_lock(&fs->vnode_list_mutex);
+  list_iterate(&fs->vnode_list, vn, vnode_t, vn_link) { count++; }
+  kmutex_unlock(&fs->vnode_list_mutex);
+  return count;
 }
