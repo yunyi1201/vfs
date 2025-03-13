@@ -381,8 +381,32 @@ static long s5fs_mmap(vnode_t *file, mobj_t **ret) {
 static long s5fs_mknod(struct vnode *dir, const char *name, size_t namelen,
                        int mode, devid_t devid, struct vnode **out) {
   KASSERT(S_ISDIR(dir->vn_mode) && "should be handled at the VFS level");
-  NOT_YET_IMPLEMENTED("S5FS: s5fs_mknod");
-  return -1;
+  long ino;
+  if (!S_ISCHR(mode) && !S_ISBLK(mode) && !S_ISREG(mode)) {
+    return -ENOTSUP;
+  }
+  if (S_ISCHR(mode)) {
+    ino = s5_alloc_inode(VNODE_TO_S5FS(dir), S5_TYPE_CHR, devid);
+  } else if (S_ISBLK(mode)) {
+    ino = s5_alloc_inode(VNODE_TO_S5FS(dir), S5_TYPE_BLK, devid);
+  } else {
+    ino = s5_alloc_inode(VNODE_TO_S5FS(dir), S5_TYPE_DATA, devid);
+  }
+
+  if (ino < 0) {
+    return ino;
+  }
+  *out = vget(dir->vn_fs, ino);
+  long ret =
+      s5_link(VNODE_TO_S5NODE(dir), name, namelen, VNODE_TO_S5NODE(*out));
+
+  if (ret < 0) {
+    // leave the operation to `vput` -> `mput` -> ``s5fs_delete_vnode` -> `
+    // s5_free_inode`. s5_free_inode(VNODE_TO_S5FS(dir), ino);
+    vput(out);
+    return ret;
+  }
+  return 0;
 }
 
 /* Search for a given entry within a directory.
@@ -549,7 +573,8 @@ static long s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen,
   long ret = s5_write_file(VNODE_TO_S5NODE(child_vnode), 0,
                            (const char *)(&entry), sizeof(entry));
   if (ret < 0) {
-    s5_free_inode(s5fs, ino);
+    // may cause free inode twice
+    // s5_free_inode(s5fs, ino);
     vput_locked(&child_vnode);
     return ret;
   }
@@ -560,7 +585,8 @@ static long s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen,
   ret = s5_write_file(VNODE_TO_S5NODE(child_vnode), sizeof(entry),
                       (const char *)(&entry), sizeof(entry));
   if (ret < 0) {
-    s5_free_inode(s5fs, ino);
+    // my cause free inode twice.
+    // s5_free_inode(s5fs, ino);
     vput_locked(&child_vnode);
     return ret;
   }
@@ -571,7 +597,8 @@ static long s5fs_mkdir(vnode_t *dir, const char *name, size_t namelen,
   // link the name to child_node.
   ret = s5_link(dir_node, name, namelen, child_node);
   if (ret < 0) {
-    s5_free_inode(s5fs, ino);
+    // may cause free inode twice.
+    // s5_free_inode(s5fs, ino);
     vput_locked(&child_vnode);
     // undo the link count for dir.
     dir_node->inode.s5_linkcount--;

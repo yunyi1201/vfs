@@ -379,7 +379,7 @@ static long s5_alloc_block(s5fs_t *s5fs) {
     s->s5s_nfree = S5_NBLKS_PER_FNODE - 1;
     s5_release_disk_block(&pf);
   }
-
+  // initialize the block to zero to avoid garbage data leave the caller do it.
   long blockno = s->s5s_free_blocks[--s->s5s_nfree];
   s5_unlock_super(s5fs);
   return blockno;
@@ -577,7 +577,7 @@ long s5_find_dirent(s5_node_t *sn, const char *name, size_t namelen,
       return ret;
     }
     KASSERT(ret == sizeof(entry));
-    if (name_match(name, entry.s5d_name, namelen)) {
+    if (name_match(entry.s5d_name, name, namelen)) {
       if (filepos) {
         *filepos = pos;
       }
