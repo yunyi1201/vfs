@@ -425,8 +425,24 @@ long s5_find_dirent(s5_node_t *sn, const char *name, size_t namelen,
                     size_t *filepos) {
   KASSERT(S_ISDIR(sn->vnode.vn_mode) && "should be handled at the VFS level");
   KASSERT(S5_BLOCK_SIZE == PAGE_SIZE && "be wary, thee");
-  NOT_YET_IMPLEMENTED("S5FS: s5_find_dirent");
-  return -1;
+  s5_dirent_t entry;
+  size_t pos = 0;
+  KASSERT(sn->vnode.vn_len == sn->inode.s5_un.s5_size);
+  while (pos < sn->inode.s5_un.s5_size) {
+    long ret = s5_read_file(sn, pos, (char *)(&entry), sizeof(entry));
+    if (ret < 0) {
+      return ret;
+    }
+    KASSERT(ret == sizeof(entry));
+    if (name_match(name, entry.s5d_name, namelen)) {
+      if (filepos) {
+        *filepos = pos;
+      }
+      return entry.s5d_inode;
+    }
+    pos += ret;
+  }
+  return -ENOENT;
 }
 
 /* Remove the directory entry specified by name and namelen from the directory
