@@ -929,6 +929,8 @@ static long s5fs_get_pframe(vnode_t *vnode, uint64_t pagenum, long forwrite,
     return 0;
   } else {
     // block is in a sparse region of the file
+    // so read from the vnode's memory object that call memset pframe's content
+    // to all zeor. avoid write back to disk.
     KASSERT(!forwrite);
     return mobj_default_get_pframe(&vnode->vn_mobj, pagenum, forwrite, pfp);
   }
