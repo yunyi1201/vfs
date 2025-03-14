@@ -1,3 +1,4 @@
+#include "config.h"
 #include "errno.h"
 #include "fs/vnode.h"
 #include "globals.h"
@@ -534,8 +535,61 @@ static long s5fs_unlink(vnode_t *dir, const char *name, size_t namelen) {
 static long s5fs_rename(vnode_t *olddir, const char *oldname, size_t oldnamelen,
                         vnode_t *newdir, const char *newname,
                         size_t newnamelen) {
-  NOT_YET_IMPLEMENTED("S5FS: s5fs_rename");
-  return -1;
+  if (newnamelen >= NAME_LEN) {
+    return -ENAMETOOLONG;
+  }
+
+  if (!S_ISDIR(newdir->vn_mode)) {
+    return -ENOTDIR;
+  }
+
+  s5_node_t *olddir_node = VNODE_TO_S5NODE(olddir);
+  s5_node_t *newdir_node = VNODE_TO_S5NODE(newdir);
+
+  long ino = s5_find_dirent(olddir_node, oldname, oldnamelen, NULL);
+  if (ino < 0) {
+    return ino;
+  }
+  vnode_t *old_vnode = vget_locked(olddir->vn_fs, ino);
+  s5_node_t *old_node = VNODE_TO_S5NODE(old_vnode);
+  int link_count = old_node->inode.s5_linkcount;
+  // don't support renaming of directories.
+  if (S_ISDIR(old_vnode->vn_mode)) {
+    vput_locked(&old_vnode);
+    return -EISDIR;
+  }
+
+  long new_ino = s5_find_dirent(newdir_node, newname, newnamelen, NULL);
+  // case 1: newdir alreay contains an entry for newname.
+  if (new_ino > 0 && new_ino != ino) {
+    vnode_t *new_vnode = vget_locked(newdir->vn_fs, new_ino);
+    s5_node_t *new_node = VNODE_TO_S5NODE(new_vnode);
+    if (S_ISDIR(new_vnode->vn_mode)) {
+      vput_locked(&new_vnode);
+      vput_locked(&old_vnode);
+      return -EISDIR;
+    }
+    s5_remove_dirent(newdir_node, newname, newnamelen, new_node);
+    // (TODO) if the fail, we should undo the remove `remove dirent` operation above.
+    long ret = s5_link(newdir_node, newname, newnamelen, old_node);
+    if (ret < 0) {
+      vput_locked(&new_vnode);
+      vput_locked(&old_vnode);
+      return ret;
+    }
+    vput_locked(&new_vnode);
+  } else {
+    long ret = s5_link(newdir_node, newname, newnamelen, old_node);
+    if (ret < 0) {
+      vput_locked(&old_vnode);
+      return ret;
+    }
+  }
+  s5_remove_dirent(olddir_node, oldname, oldnamelen, old_node);
+  vput_locked(&old_vnode);
+  KASSERT(old_node->inode.s5_linkcount == link_count);
+
+  return 0;
 }
 
 /* Create a directory.
@@ -642,8 +696,36 @@ static long s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen) {
   KASSERT(!name_match(".", name, namelen));
   KASSERT(!name_match("..", name, namelen));
   KASSERT(S_ISDIR(parent->vn_mode) && "should be handled at the VFS level");
-  NOT_YET_IMPLEMENTED("S5FS: s5fs_rmdir");
-  return -1;
+  s5_node_t *parent_node = VNODE_TO_S5NODE(parent);
+  long ino = s5_find_dirent(parent_node, name, namelen, NULL);
+  if (ino < 0) {
+    return ino;
+  }
+  KASSERT(ino != 0);
+  vnode_t *child = vget_locked(parent->vn_fs, ino);
+  if (!S_ISDIR(child->vn_mode)) {
+    vput_locked(&child);
+    return -ENOTDIR;
+  }
+  if (child->vn_len > 2 * sizeof(s5_dirent_t)) {
+    vput_locked(&child);
+    return -ENOTEMPTY;
+  }
+
+  s5_node_t *child_node = VNODE_TO_S5NODE(child);
+
+  s5_remove_dirent(parent_node, name, namelen, child_node);
+  // remove the "." and ".." entries.
+  // just decrease the link count.
+  KASSERT(child_node->inode.s5_linkcount == 2);
+  child_node->inode.s5_linkcount -= 2;
+  child_node->inode.s5_un.s5_size = 0;
+  child_node->dirtied_inode = 1;
+  // remove ".." cause parent's link count decrease by 1.
+  parent_node->inode.s5_linkcount--;
+  parent_node->dirtied_inode = 1;
+  vput_locked(&child);
+  return 0;
 }
 
 /* Read a directory entry.
