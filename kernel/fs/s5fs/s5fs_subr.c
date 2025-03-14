@@ -615,7 +615,24 @@ void s5_remove_dirent(s5_node_t *sn, const char *name, size_t namelen,
                       s5_node_t *child) {
   vnode_t *dir = &sn->vnode;
   s5_inode_t *inode = &sn->inode;
-  NOT_YET_IMPLEMENTED("S5FS: s5_remove_dirent");
+  size_t vn_len = dir->vn_len;
+  size_t entry_pos;
+
+  KASSERT(S_ISDIR(dir->vn_mode));
+  long ino = s5_find_dirent(sn, name, namelen, &entry_pos);
+  KASSERT(ino == child->inode.s5_number);
+
+  if (entry_pos + sizeof(s5_dirent_t) < vn_len) {
+    s5_dirent_t last_entry;
+    s5_read_file(sn, vn_len - sizeof(s5_dirent_t), (char *)(&last_entry),
+                 sizeof(s5_dirent_t));
+    s5_write_file(sn, entry_pos, (char *)(&last_entry), sizeof(s5_dirent_t));
+  }
+  dir->vn_len -= sizeof(s5_dirent_t);
+  inode->s5_un.s5_size = dir->vn_len;
+  child->inode.s5_linkcount--;
+  sn->dirtied_inode = child->dirtied_inode = 1;
+  KASSERT(vn_len == dir->vn_len + sizeof(s5_dirent_t));
 }
 
 /* Replace a directory entry.
@@ -705,8 +722,29 @@ long s5_link(s5_node_t *dir, const char *name, size_t namelen,
  *    these special files is actually the device id.
  */
 long s5_inode_blocks(s5_node_t *sn) {
-  NOT_YET_IMPLEMENTED("S5FS: s5_inode_blocks");
-  return -1;
+  if (sn->inode.s5_type == S5_TYPE_CHR || sn->inode.s5_type == S5_TYPE_BLK) {
+    return 0;
+  }
+  long blocks = 0;
+  for (size_t i = 0; i < S5_NDIRECT_BLOCKS; i++) {
+    if (sn->inode.s5_direct_blocks[i]) {
+      blocks++;
+    }
+  }
+  if (sn->inode.s5_indirect_block) {
+    blocks++;
+    pframe_t *pf;
+    s5_get_meta_disk_block(VNODE_TO_S5FS(&sn->vnode),
+                           sn->inode.s5_indirect_block, 0, &pf);
+    uint32_t *indirect_blocks = (uint32_t *)pf->pf_addr;
+    for (size_t i = 0; i < S5_NIDIRECT_BLOCKS; i++) {
+      if (indirect_blocks[i]) {
+        blocks++;
+      }
+    }
+    s5_release_disk_block(&pf);
+  }
+  return blocks;
 }
 
 /**
