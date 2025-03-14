@@ -570,7 +570,8 @@ static long s5fs_rename(vnode_t *olddir, const char *oldname, size_t oldnamelen,
       return -EISDIR;
     }
     s5_remove_dirent(newdir_node, newname, newnamelen, new_node);
-    // (TODO) if the fail, we should undo the remove `remove dirent` operation above.
+    // (TODO) if the fail, we should undo the remove `remove dirent` operation
+    // above.
     long ret = s5_link(newdir_node, newname, newnamelen, old_node);
     if (ret < 0) {
       vput_locked(&new_vnode);
@@ -749,14 +750,14 @@ static long s5fs_readdir(vnode_t *vnode, size_t pos, struct dirent *d) {
   s5_node_t *sn = VNODE_TO_S5NODE(vnode);
   s5_dirent_t entry = {.s5d_inode = 0, {0}};
   long ret = s5_read_file(sn, pos, (char *)(&entry), sizeof(entry));
-  if (ret < 0) {
+  if (ret <= 0) {
     return ret;
   }
   KASSERT(ret == sizeof(entry));
   d->d_ino = entry.s5d_inode;
   d->d_off = pos + ret;
   strncpy(d->d_name, entry.s5d_name, strlen(entry.s5d_name));
-  return 0;
+  return ret;
 }
 
 /* Get file status.

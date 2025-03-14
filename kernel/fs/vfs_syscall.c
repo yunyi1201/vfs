@@ -3,6 +3,7 @@
 #include <limits.h>
 
 #include "errno.h"
+#include "fs/dirent.h"
 #include "fs/fcntl.h"
 #include "fs/file.h"
 #include "fs/lseek.h"
@@ -606,13 +607,13 @@ ssize_t do_getdent(int fd, struct dirent *dirp) {
   if (!file) {
     return -EBADF;
   }
-
   struct vnode *vnode = file->f_vnode;
   if (!S_ISDIR(vnode->vn_mode)) {
     fput(&file);
     return -ENOTDIR;
   }
 
+  memset((char *)(dirp), 0, sizeof(dirent_t));
   vlock(vnode);
   KASSERT(vnode->vn_ops->readdir);
   ssize_t ret = vnode->vn_ops->readdir(vnode, file->f_pos, dirp);
