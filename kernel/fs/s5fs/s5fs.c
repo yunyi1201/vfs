@@ -718,8 +718,8 @@ static long s5fs_rmdir(vnode_t *parent, const char *name, size_t namelen) {
   s5_remove_dirent(parent_node, name, namelen, child_node);
   // remove the "." and ".." entries.
   // just decrease the link count.
-  KASSERT(child_node->inode.s5_linkcount == 2);
-  child_node->inode.s5_linkcount -= 2;
+  KASSERT(child_node->inode.s5_linkcount == 1);
+  child_node->inode.s5_linkcount -= 1;
   child_node->inode.s5_un.s5_size = 0;
   child_node->dirtied_inode = 1;
   // remove ".." cause parent's link count decrease by 1.
