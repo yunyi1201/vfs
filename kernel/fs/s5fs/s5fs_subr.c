@@ -308,8 +308,13 @@ ssize_t s5_write_file(s5_node_t *sn, size_t pos, const char *buf, size_t len) {
   size_t total_writed = 0;
   pframe_t *pf;
   do {
-    if (pos >= S5_MAX_FILE_SIZE || pos + len > S5_MAX_FILE_SIZE) {
+    // only pos is invalid, we can return error `EFBIG'
+    // otherwise, we can write partial data to the file.
+    if (pos >= S5_MAX_FILE_SIZE) {
       return -EFBIG;
+    }
+    if (pos + len > S5_MAX_FILE_SIZE) {
+      len = S5_MAX_FILE_SIZE - pos;
     }
 
     size_t writed = (pos % S5_BLOCK_SIZE + len > S5_BLOCK_SIZE)
